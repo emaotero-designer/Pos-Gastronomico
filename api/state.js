@@ -29,12 +29,18 @@ module.exports = async (req, res) => {
       const version = Number(rawVersion || 0);
       if (version === since) return res.status(200).json({ ok: true, version, changed: false });
 
-      const [tv, flatTables] = await redis([["GET", "grilla:tv"], ["HGETALL", "grilla:tables"]]);
+      const [tv, flatTables, open] = await redis([
+        ["GET", "grilla:tv"],
+        ["HGETALL", "grilla:tables"],
+        ["GET", "grilla:open"],
+      ]);
       const tables = {};
       for (let index = 0; index < (flatTables || []).length; index += 2) {
         tables[flatTables[index]] = flatTables[index + 1];
       }
-      return res.status(200).json({ ok: true, version, changed: true, tv: tv || null, tables });
+      return res
+        .status(200)
+        .json({ ok: true, version, changed: true, tv: tv || null, tables, open: open || null });
     }
 
     if (req.method === "POST") {
@@ -46,8 +52,11 @@ module.exports = async (req, res) => {
           : [["HDEL", "grilla:tables", String(body.slot)]];
       } else if (body.op === "tv") {
         commands = [["SET", "grilla:tv", JSON.stringify(body.tv)]];
+      } else if (body.op === "open") {
+        // Mesa tocada en un reloj: la abre el posnet de ese mozo (se borra sola al minuto)
+        commands = [["SET", "grilla:open", JSON.stringify(body.open), "EX", "60"]];
       } else if (body.op === "reset") {
-        commands = [["DEL", "grilla:tv", "grilla:tables"]];
+        commands = [["DEL", "grilla:tv", "grilla:tables", "grilla:open"]];
       } else {
         return res.status(400).json({ ok: false, error: "Operación desconocida" });
       }
